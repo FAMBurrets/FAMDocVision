@@ -1,0 +1,8 @@
+{
+  "name": "Docuvision by Fam Brands",
+  "description": "A streamlined presentation platform to organize videos and images into structured folders, with AI-powered insights and PDF export capabilities.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
