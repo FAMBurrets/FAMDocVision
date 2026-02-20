@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
+const sharp = require('sharp');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -87,13 +88,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Convert any image to JPEG using macOS sips command
+// Convert any image to JPEG using sharp (cross-platform)
 app.post('/convert', authenticate, upload.single('file'), async (req, res) => {
-  const tempDir = os.tmpdir();
-  const ext = path.extname(req.file?.originalname || '').toLowerCase() || '.heic';
-  const inputPath = path.join(tempDir, `input-${Date.now()}${ext}`);
-  const outputPath = path.join(tempDir, `output-${Date.now()}.jpg`);
-
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -101,22 +97,15 @@ app.post('/convert', authenticate, upload.single('file'), async (req, res) => {
 
     console.log('Converting:', req.file.originalname);
 
-    // Write input file
-    fs.writeFileSync(inputPath, req.file.buffer);
+    const jpegBuffer = await sharp(req.file.buffer)
+      .jpeg({ quality: 90 })
+      .toBuffer();
 
-    // Convert using sips (macOS built-in)
-    execSync(`sips -s format jpeg "${inputPath}" --out "${outputPath}"`, {
-      stdio: 'pipe'
-    });
-
-    // Read converted file
-    const jpegBuffer = fs.readFileSync(outputPath);
     const base64 = jpegBuffer.toString('base64');
     const dataUrl = `data:image/jpeg;base64,${base64}`;
 
     console.log('Converted successfully:', req.file.originalname);
 
-    // Replace any image extension with .jpg
     const baseName = req.file.originalname.replace(/\.(heic|heif|png|gif|bmp|tiff?)$/i, '');
     res.json({
       success: true,
@@ -126,14 +115,10 @@ app.post('/convert', authenticate, upload.single('file'), async (req, res) => {
   } catch (error) {
     console.error('Conversion error:', error.message);
     res.status(500).json({ error: error.message });
-  } finally {
-    // Cleanup temp files
-    try { fs.unlinkSync(inputPath); } catch (e) {}
-    try { fs.unlinkSync(outputPath); } catch (e) {}
   }
 });
 
-// Convert MOV to MP4 using macOS avconvert
+// Convert MOV to MP4 using ffmpeg (cross-platform)
 app.post('/convert-video', authenticate, upload.single('file'), async (req, res) => {
   const tempDir = os.tmpdir();
   const inputPath = path.join(tempDir, `input-${Date.now()}.mov`);
@@ -146,16 +131,13 @@ app.post('/convert-video', authenticate, upload.single('file'), async (req, res)
 
     console.log('Converting video:', req.file.originalname);
 
-    // Write input file
     fs.writeFileSync(inputPath, req.file.buffer);
 
-    // Convert using avconvert (macOS built-in)
-    execSync(`avconvert -s "${inputPath}" -o "${outputPath}" -p PresetHEVC1920x1080`, {
+    execSync(`ffmpeg -i "${inputPath}" -c:v libx264 -preset fast -crf 23 -c:a aac -movflags +faststart -y "${outputPath}"`, {
       stdio: 'pipe',
-      timeout: 300000 // 5 min timeout for large videos
+      timeout: 300000
     });
 
-    // Read converted file
     const mp4Buffer = fs.readFileSync(outputPath);
     const base64 = mp4Buffer.toString('base64');
     const dataUrl = `data:video/mp4;base64,${base64}`;
@@ -171,7 +153,6 @@ app.post('/convert-video', authenticate, upload.single('file'), async (req, res)
     console.error('Video conversion error:', error.message);
     res.status(500).json({ error: error.message });
   } finally {
-    // Cleanup temp files
     try { fs.unlinkSync(inputPath); } catch (e) {}
     try { fs.unlinkSync(outputPath); } catch (e) {}
   }
