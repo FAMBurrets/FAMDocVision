@@ -32,6 +32,11 @@ jobs:
           api_location: "" # Api source code path - optional
           output_location: "dist" # Built app content directory - optional
           ###### End of Repository/Build Configurations ######
+        env:
+          VITE_SUPABASE_URL: https://elmijwfarrxhvgsdtuje.supabase.co
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_CONVERT_SERVER: https://docvision-api.azurewebsites.net
+          VITE_CONVERT_API_KEY: ${{ secrets.VITE_CONVERT_API_KEY }}
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
