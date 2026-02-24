@@ -158,7 +158,7 @@ app.post('/convert-video', authenticate, upload.single('file'), async (req, res)
   }
 });
 
-const PORT = 3006;
+const PORT = process.env.PORT || 3006;
 app.listen(PORT, () => {
   console.log(`Conversion server running on http://localhost:${PORT}`);
 });
