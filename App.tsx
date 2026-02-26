@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, Mail, FileText, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings } from 'lucide-react';
+import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, Mail, FileText, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save } from 'lucide-react';
 import { Folder, ViewState, Asset } from './types';
 import { useAuth } from './contexts/AuthContext';
 import LoginScreen from './components/LoginScreen';
@@ -78,6 +78,8 @@ export default function App() {
   const [isUploadingVideos, setIsUploadingVideos] = useState(false);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [folderNotes, setFolderNotes] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
 
   const loadFolders = useCallback(async () => {
     if (!user) return;
@@ -250,6 +252,28 @@ export default function App() {
   const handleEmail = () => {
     const body = `Presentation: ${activeFolder?.name}\nImages: ${activeFolder?.images.length}\nVideos: ${activeFolder?.videos.length}`;
     window.location.href = `mailto:?subject=Presentation: ${activeFolder?.name}&body=${encodeURIComponent(body)}`;
+  };
+
+  // Update notes when folder changes
+  useEffect(() => {
+    if (activeFolder) {
+      setFolderNotes(activeFolder.notes || '');
+    }
+  }, [activeFolder?.id]);
+
+  const handleSaveNotes = async () => {
+    if (!activeFolder) return;
+    setIsSavingNotes(true);
+    try {
+      await db.updateFolderNotes(activeFolder.id, folderNotes);
+      setFolders(prev => prev.map(f =>
+        f.id === activeFolder.id ? { ...f, notes: folderNotes } : f
+      ));
+    } catch (error) {
+      console.error('Failed to save notes:', error);
+    } finally {
+      setIsSavingNotes(false);
+    }
   };
 
   return (
@@ -432,6 +456,30 @@ export default function App() {
                     ))}
                   </div>
                 )}
+
+                {/* Notes Section */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                      <MessageSquare size={18} />
+                      <span>Notes</span>
+                    </div>
+                    <button
+                      onClick={handleSaveNotes}
+                      disabled={isSavingNotes || folderNotes === (activeFolder?.notes || '')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-brand-red text-white hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    >
+                      <Save size={14} />
+                      {isSavingNotes ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                  <textarea
+                    value={folderNotes}
+                    onChange={(e) => setFolderNotes(e.target.value)}
+                    placeholder="Add notes for this folder..."
+                    className="w-full h-32 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-red focus:bg-white transition-all resize-none text-slate-700"
+                  />
+                </div>
 
               </div>
 

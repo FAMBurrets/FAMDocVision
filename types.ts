@@ -9,10 +9,11 @@ export interface Asset {
 export interface Folder {
   id: string;
   name: string;
-  videos: Asset[]; // Changed from single video to array
+  videos: Asset[];
   images: Asset[];
   createdAt: number;
   aiDescription?: string;
+  notes?: string;
 }
 
 export type ViewState = 'grid' | 'viewing';

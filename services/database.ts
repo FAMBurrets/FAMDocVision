@@ -29,6 +29,7 @@ export interface DbFolder {
   user_id: string;
   name: string;
   ai_description: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +62,7 @@ function toAppFolder(dbFolder: DbFolder, assets: DbAsset[]): Folder {
     })),
     createdAt: new Date(dbFolder.created_at).getTime(),
     aiDescription: dbFolder.ai_description || undefined,
+    notes: dbFolder.notes || undefined,
   };
 }
 
@@ -164,4 +166,11 @@ export async function updateFolderAiDescription(folderId: string, aiDescription:
 export async function deleteFolder(folderId: string): Promise<void> {
   await fetchApi(`/assets?folder_id=eq.${folderId}`, { method: 'DELETE' });
   await fetchApi(`/folders?id=eq.${folderId}`, { method: 'DELETE' });
+}
+
+export async function updateFolderNotes(folderId: string, notes: string): Promise<void> {
+  await fetchApi(`/folders?id=eq.${folderId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ notes, updated_at: new Date().toISOString() })
+  });
 }
