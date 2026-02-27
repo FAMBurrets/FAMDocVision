@@ -78,6 +78,9 @@ export default function App() {
   const [isUploadingVideos, setIsUploadingVideos] = useState(false);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+  const [profileDisplayName, setProfileDisplayName] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [folderNotes, setFolderNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
 
@@ -337,7 +340,8 @@ export default function App() {
                     <button
                       onClick={() => {
                         setIsProfileOpen(false);
-                        // Profile action - can be expanded later
+                        setProfileDisplayName(user.user_metadata?.full_name || '');
+                        setIsProfileSettingsOpen(true);
                       }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 text-left text-slate-700 hover:bg-slate-100 rounded-lg transition-all"
                     >
@@ -608,6 +612,72 @@ export default function App() {
                 className="bg-brand-red hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed text-white px-8 py-2.5 rounded-xl font-semibold shadow-lg transition-all active:scale-95 flex items-center gap-2"
               >
                 {isSaving ? 'Saving...' : isUploadingVideos || isUploadingImages ? 'Uploading...' : (editingFolderId ? 'Save Changes' : 'Create Folder')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Settings Modal */}
+      {isProfileSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-navy/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-800">Profile Settings</h2>
+              <button
+                onClick={() => setIsProfileSettingsOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-xl transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Display Name</label>
+                <input
+                  type="text"
+                  value={profileDisplayName}
+                  onChange={(e) => setProfileDisplayName(e.target.value)}
+                  placeholder="Your display name"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-red focus:bg-white transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Email</label>
+                <input
+                  type="email"
+                  value={user?.email || ''}
+                  disabled
+                  className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-3 text-slate-500 cursor-not-allowed"
+                />
+                <p className="text-xs text-slate-400 mt-1">Email cannot be changed</p>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setIsProfileSettingsOpen(false)}
+                className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setIsSavingProfile(true);
+                  try {
+                    // For now, just close the modal - full Supabase user update can be added later
+                    // await supabase.auth.updateUser({ data: { full_name: profileDisplayName } });
+                    setIsProfileSettingsOpen(false);
+                  } finally {
+                    setIsSavingProfile(false);
+                  }
+                }}
+                disabled={isSavingProfile}
+                className="bg-brand-red hover:bg-brand-red-dark disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-semibold shadow-lg transition-all active:scale-95"
+              >
+                {isSavingProfile ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
