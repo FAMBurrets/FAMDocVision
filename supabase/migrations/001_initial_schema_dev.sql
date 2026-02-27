@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS folders (
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     ai_description TEXT,
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
