@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, Mail, FileText, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save } from 'lucide-react';
+import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save } from 'lucide-react';
 import { Folder, ViewState, Asset } from './types';
 import { useAuth } from './contexts/AuthContext';
 import LoginScreen from './components/LoginScreen';
@@ -115,6 +115,14 @@ export default function App() {
   useEffect(() => {
     loadFolders();
   }, [loadFolders]);
+
+  // Update notes when folder changes
+  useEffect(() => {
+    const activeFolder = folders.find(f => f.id === activeFolderId);
+    if (activeFolder) {
+      setFolderNotes(activeFolder.notes || '');
+    }
+  }, [activeFolderId, folders]);
 
   // Note: localStorage backup removed - data persists in database
   // Base64 files are too large for localStorage quota
@@ -244,22 +252,6 @@ export default function App() {
   };
 
   const activeFolder = folders.find(f => f.id === activeFolderId);
-
-  const handleExportPDF = () => {
-    alert("PDF Export initiated for: " + activeFolder?.name);
-  };
-
-  const handleEmail = () => {
-    const body = `Presentation: ${activeFolder?.name}\nImages: ${activeFolder?.images.length}\nVideos: ${activeFolder?.videos.length}`;
-    window.location.href = `mailto:?subject=Presentation: ${activeFolder?.name}&body=${encodeURIComponent(body)}`;
-  };
-
-  // Update notes when folder changes
-  useEffect(() => {
-    if (activeFolder) {
-      setFolderNotes(activeFolder.notes || '');
-    }
-  }, [activeFolder?.id]);
 
   const handleSaveNotes = async () => {
     if (!activeFolder) return;
@@ -408,19 +400,9 @@ export default function App() {
           </div>
         ) : (
           <div className="flex flex-col h-full gap-8 animate-in slide-in-from-bottom-4 duration-500">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-6">
-              <div>
-                <h2 className="text-3xl font-bold text-slate-900 mb-2">{activeFolder?.name}</h2>
-                <p className="text-slate-500">Last updated {new Date(activeFolder?.createdAt || 0).toLocaleDateString()}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <button onClick={handleExportPDF} className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl font-semibold hover:bg-slate-200 transition-all">
-                  <FileText size={18} /> PDF
-                </button>
-                <button onClick={handleEmail} className="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-2.5 rounded-xl font-semibold hover:bg-slate-200 transition-all">
-                  <Mail size={18} /> Email
-                </button>
-              </div>
+            <div className="border-b border-slate-200 pb-6">
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">{activeFolder?.name}</h2>
+              <p className="text-slate-500">Last updated {new Date(activeFolder?.createdAt || 0).toLocaleDateString()}</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-[600px]">
