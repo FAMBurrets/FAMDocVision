@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save } from 'lucide-react';
+import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save, Check } from 'lucide-react';
 import { Folder, ViewState, Asset } from './types';
 import { useAuth } from './contexts/AuthContext';
 import LoginScreen from './components/LoginScreen';
@@ -695,12 +695,13 @@ export default function App() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
-          <div className="bg-slate-800 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
+        <div className="fixed bottom-6 right-6 z-[100]">
+          <div className="bg-green-600 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+            <Check size={18} />
             <span className="text-sm font-medium">{toastMessage}</span>
             <button
               onClick={() => setToastMessage(null)}
-              className="text-slate-400 hover:text-white"
+              className="text-green-200 hover:text-white transition-colors ml-2"
             >
               <X size={16} />
             </button>
