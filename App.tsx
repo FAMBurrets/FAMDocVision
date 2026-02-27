@@ -84,6 +84,7 @@ export default function App() {
   const [folderNotes, setFolderNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const loadFolders = useCallback(async () => {
     if (!user) return;
@@ -240,18 +241,23 @@ export default function App() {
     }
   };
 
-  const handleDeleteFolder = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this folder?")) return;
+  const handleDeleteFolder = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteFolder = async () => {
+    if (!deleteConfirmId) return;
 
     try {
-      await db.deleteFolder(id);
-      setFolders(prev => prev.filter(f => f.id !== id));
-      if (activeFolderId === id) setViewState('grid');
+      await db.deleteFolder(deleteConfirmId);
+      setFolders(prev => prev.filter(f => f.id !== deleteConfirmId));
+      if (activeFolderId === deleteConfirmId) setViewState('grid');
     } catch (error) {
       console.error('Failed to delete folder:', error);
-      // Fallback to local state deletion
-      setFolders(prev => prev.filter(f => f.id !== id));
-      if (activeFolderId === id) setViewState('grid');
+      setFolders(prev => prev.filter(f => f.id !== deleteConfirmId));
+      if (activeFolderId === deleteConfirmId) setViewState('grid');
+    } finally {
+      setDeleteConfirmId(null);
     }
   };
 
@@ -687,6 +693,37 @@ export default function App() {
                 className="bg-brand-red hover:bg-brand-red-dark disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-semibold shadow-lg transition-all active:scale-95"
               >
                 {isSavingProfile ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-navy/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-6">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={24} className="text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Delete Folder?</h3>
+              <p className="text-slate-500 text-center text-sm">
+                This will permanently delete this folder and all its contents. This action cannot be undone.
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-slate-50 flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmId(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl font-semibold text-slate-600 hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteFolder}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl font-semibold transition-all"
+              >
+                Delete
               </button>
             </div>
           </div>
