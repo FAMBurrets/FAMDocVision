@@ -60,7 +60,7 @@ const FolderCard: React.FC<{ folder: Folder; onClick: () => void; onDelete: (id:
 );
 
 export default function App() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, signOut, updateProfile } = useAuth();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -667,9 +667,10 @@ export default function App() {
                 onClick={async () => {
                   setIsSavingProfile(true);
                   try {
-                    // For now, just close the modal - full Supabase user update can be added later
-                    // await supabase.auth.updateUser({ data: { full_name: profileDisplayName } });
+                    await updateProfile(profileDisplayName);
                     setIsProfileSettingsOpen(false);
+                  } catch (error) {
+                    console.error('Failed to update profile:', error);
                   } finally {
                     setIsSavingProfile(false);
                   }

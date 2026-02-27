@@ -10,6 +10,7 @@ interface AuthContextType {
   signInWithAzure: () => Promise<void>;
   signInAsAdmin: () => void;
   signOut: () => Promise<void>;
+  updateProfile: (displayName: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -103,8 +104,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateProfile = async (displayName: string) => {
+    // For mock admin user, just update local state
+    if (user?.id === 'admin-dev-user') {
+      setUser({
+        ...user,
+        user_metadata: { ...user.user_metadata, full_name: displayName },
+      } as User);
+      return;
+    }
+
+    // For real Supabase users
+    const { data, error } = await supabase.auth.updateUser({
+      data: { full_name: displayName },
+    });
+    if (error) {
+      console.error('Error updating profile:', error.message);
+      throw error;
+    }
+    if (data.user) {
+      setUser(data.user);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, authError, signInWithAzure, signInAsAdmin, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, authError, signInWithAzure, signInAsAdmin, signOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );
