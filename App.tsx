@@ -83,6 +83,7 @@ export default function App() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [folderNotes, setFolderNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const loadFolders = useCallback(async () => {
     if (!user) return;
@@ -256,6 +257,11 @@ export default function App() {
 
   const activeFolder = folders.find(f => f.id === activeFolderId);
 
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   const handleSaveNotes = async () => {
     if (!activeFolder) return;
     setIsSavingNotes(true);
@@ -264,8 +270,10 @@ export default function App() {
       setFolders(prev => prev.map(f =>
         f.id === activeFolder.id ? { ...f, notes: folderNotes } : f
       ));
+      showToast('Notes saved successfully');
     } catch (error) {
       console.error('Failed to save notes:', error);
+      showToast('Failed to save notes');
     } finally {
       setIsSavingNotes(false);
     }
@@ -681,6 +689,21 @@ export default function App() {
                 {isSavingProfile ? 'Saving...' : 'Save'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">
+          <div className="bg-slate-800 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
+            <span className="text-sm font-medium">{toastMessage}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="text-slate-400 hover:text-white"
+            >
+              <X size={16} />
+            </button>
           </div>
         </div>
       )}
