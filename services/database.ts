@@ -1,28 +1,5 @@
 import { Folder, Asset } from '../types';
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:8000';
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0';
-
-const headers = {
-  'apikey': SUPABASE_KEY,
-  'Authorization': `Bearer ${SUPABASE_KEY}`,
-  'Content-Type': 'application/json',
-  'Prefer': 'return=representation'
-};
-
-async function fetchApi(endpoint: string, options: RequestInit = {}) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1${endpoint}`, {
-    ...options,
-    headers: { ...headers, ...options.headers }
-  });
-
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
-  }
-
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
-}
+import { supabase } from './supabase';
 
 export interface DbFolder {
   id: string;
@@ -67,27 +44,39 @@ function toAppFolder(dbFolder: DbFolder, assets: DbAsset[]): Folder {
 }
 
 export async function getFolders(userId: string): Promise<Folder[]> {
-  try {
-    const folders = await fetchApi(`/folders?user_id=eq.${userId}&order=created_at.desc`);
+  const { data: folders, error: foldersError } = await supabase
+    .from('folders')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
 
-    if (!folders || folders.length === 0) {
-      return [];
-    }
-
-    const folderIds = folders.map((f: DbFolder) => f.id);
-    const assets = await fetchApi(`/assets?folder_id=in.(${folderIds.join(',')})`);
-
-    const assetsByFolder = (assets || []).reduce((acc: Record<string, DbAsset[]>, asset: DbAsset) => {
-      if (!acc[asset.folder_id]) acc[asset.folder_id] = [];
-      acc[asset.folder_id].push(asset);
-      return acc;
-    }, {});
-
-    return folders.map((f: DbFolder) => toAppFolder(f, assetsByFolder[f.id] || []));
-  } catch (error) {
-    console.warn('Database error:', error);
-    throw error;
+  if (foldersError) {
+    console.error('Error fetching folders:', foldersError);
+    throw foldersError;
   }
+
+  if (!folders || folders.length === 0) {
+    return [];
+  }
+
+  const folderIds = folders.map((f: DbFolder) => f.id);
+  const { data: assets, error: assetsError } = await supabase
+    .from('assets')
+    .select('*')
+    .in('folder_id', folderIds);
+
+  if (assetsError) {
+    console.error('Error fetching assets:', assetsError);
+    throw assetsError;
+  }
+
+  const assetsByFolder = (assets || []).reduce((acc: Record<string, DbAsset[]>, asset: DbAsset) => {
+    if (!acc[asset.folder_id]) acc[asset.folder_id] = [];
+    acc[asset.folder_id].push(asset);
+    return acc;
+  }, {});
+
+  return folders.map((f: DbFolder) => toAppFolder(f, assetsByFolder[f.id] || []));
 }
 
 export async function createFolder(
@@ -96,10 +85,16 @@ export async function createFolder(
   videos: Asset[],
   images: Asset[]
 ): Promise<Folder> {
-  const [folder] = await fetchApi('/folders', {
-    method: 'POST',
-    body: JSON.stringify({ user_id: userId, name })
-  });
+  const { data: folder, error: folderError } = await supabase
+    .from('folders')
+    .insert({ user_id: userId, name })
+    .select()
+    .single();
+
+  if (folderError) {
+    console.error('Error creating folder:', folderError);
+    throw folderError;
+  }
 
   const allAssets = [
     ...videos.map(v => ({ folder_id: folder.id, name: v.name, url: v.url, type: 'video' })),
@@ -107,25 +102,36 @@ export async function createFolder(
   ];
 
   if (allAssets.length > 0) {
-    await fetchApi('/assets', {
-      method: 'POST',
-      body: JSON.stringify(allAssets)
-    });
+    const { error: assetsError } = await supabase
+      .from('assets')
+      .insert(allAssets);
+
+    if (assetsError) {
+      console.error('Error creating assets:', assetsError);
+      throw assetsError;
+    }
   }
 
   return (await getFolderById(folder.id))!;
 }
 
 export async function getFolderById(folderId: string): Promise<Folder | null> {
-  try {
-    const [folder] = await fetchApi(`/folders?id=eq.${folderId}`);
-    if (!folder) return null;
+  const { data: folder, error: folderError } = await supabase
+    .from('folders')
+    .select('*')
+    .eq('id', folderId)
+    .single();
 
-    const assets = await fetchApi(`/assets?folder_id=eq.${folderId}`);
-    return toAppFolder(folder, assets || []);
-  } catch {
+  if (folderError || !folder) {
     return null;
   }
+
+  const { data: assets } = await supabase
+    .from('assets')
+    .select('*')
+    .eq('folder_id', folderId);
+
+  return toAppFolder(folder, assets || []);
 }
 
 export async function updateFolder(
@@ -134,43 +140,91 @@ export async function updateFolder(
   videos: Asset[],
   images: Asset[]
 ): Promise<Folder> {
-  await fetchApi(`/folders?id=eq.${folderId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ name, updated_at: new Date().toISOString() })
-  });
+  const { error: updateError } = await supabase
+    .from('folders')
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq('id', folderId);
 
-  await fetchApi(`/assets?folder_id=eq.${folderId}`, { method: 'DELETE' });
+  if (updateError) {
+    console.error('Error updating folder:', updateError);
+    throw updateError;
+  }
 
+  // Delete existing assets
+  const { error: deleteError } = await supabase
+    .from('assets')
+    .delete()
+    .eq('folder_id', folderId);
+
+  if (deleteError) {
+    console.error('Error deleting assets:', deleteError);
+    throw deleteError;
+  }
+
+  // Insert new assets
   const allAssets = [
     ...videos.map(v => ({ folder_id: folderId, name: v.name, url: v.url, type: 'video' })),
     ...images.map(i => ({ folder_id: folderId, name: i.name, url: i.url, type: 'image' })),
   ];
 
   if (allAssets.length > 0) {
-    await fetchApi('/assets', {
-      method: 'POST',
-      body: JSON.stringify(allAssets)
-    });
+    const { error: insertError } = await supabase
+      .from('assets')
+      .insert(allAssets);
+
+    if (insertError) {
+      console.error('Error inserting assets:', insertError);
+      throw insertError;
+    }
   }
 
   return (await getFolderById(folderId))!;
 }
 
 export async function updateFolderAiDescription(folderId: string, aiDescription: string): Promise<void> {
-  await fetchApi(`/folders?id=eq.${folderId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ai_description: aiDescription, updated_at: new Date().toISOString() })
-  });
+  const { error } = await supabase
+    .from('folders')
+    .update({ ai_description: aiDescription, updated_at: new Date().toISOString() })
+    .eq('id', folderId);
+
+  if (error) {
+    console.error('Error updating AI description:', error);
+    throw error;
+  }
 }
 
 export async function deleteFolder(folderId: string): Promise<void> {
-  await fetchApi(`/assets?folder_id=eq.${folderId}`, { method: 'DELETE' });
-  await fetchApi(`/folders?id=eq.${folderId}`, { method: 'DELETE' });
+  // Delete assets first
+  const { error: assetsError } = await supabase
+    .from('assets')
+    .delete()
+    .eq('folder_id', folderId);
+
+  if (assetsError) {
+    console.error('Error deleting assets:', assetsError);
+    throw assetsError;
+  }
+
+  // Delete folder
+  const { error: folderError } = await supabase
+    .from('folders')
+    .delete()
+    .eq('id', folderId);
+
+  if (folderError) {
+    console.error('Error deleting folder:', folderError);
+    throw folderError;
+  }
 }
 
 export async function updateFolderNotes(folderId: string, notes: string): Promise<void> {
-  await fetchApi(`/folders?id=eq.${folderId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ notes, updated_at: new Date().toISOString() })
-  });
+  const { error } = await supabase
+    .from('folders')
+    .update({ notes, updated_at: new Date().toISOString() })
+    .eq('id', folderId);
+
+  if (error) {
+    console.error('Error updating notes:', error);
+    throw error;
+  }
 }
