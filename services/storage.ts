@@ -1,6 +1,7 @@
 // File storage service
-// Creates data URLs for images and videos
-// Converts HEIC to JPEG via server (local dev only)
+// Uploads files to Supabase Storage and returns public URLs
+
+import { supabase } from './supabase';
 
 const CONVERT_SERVER = import.meta.env.VITE_CONVERT_SERVER || 'http://localhost:3006';
 const CONVERT_API_KEY = import.meta.env.VITE_CONVERT_API_KEY || 'dev-convert-key-change-in-production';
@@ -36,7 +37,7 @@ function isWebFriendlyVideo(file: File): boolean {
   return webTypes.includes(file.type) || webExtensions.some(e => ext.endsWith(e));
 }
 
-async function convertMovToMp4(file: File): Promise<{ name: string; dataUrl: string }> {
+async function convertMovToMp4(file: File): Promise<Blob> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -54,10 +55,17 @@ async function convertMovToMp4(file: File): Promise<{ name: string; dataUrl: str
   }
 
   const result = await response.json();
-  return { name: result.name, dataUrl: result.dataUrl };
+  // Convert base64 back to blob for upload
+  const base64Data = result.dataUrl.split(',')[1];
+  const binaryString = atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: 'video/mp4' });
 }
 
-async function convertHeicToJpeg(file: File): Promise<{ name: string; dataUrl: string }> {
+async function convertHeicToJpeg(file: File): Promise<Blob> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -75,16 +83,49 @@ async function convertHeicToJpeg(file: File): Promise<{ name: string; dataUrl: s
   }
 
   const result = await response.json();
-  return { name: result.name, dataUrl: result.dataUrl };
+  // Convert base64 back to blob for upload
+  const base64Data = result.dataUrl.split(',')[1];
+  const binaryString = atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: 'image/jpeg' });
 }
 
-export function fileToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+function generateUniqueFileName(originalName: string): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 8);
+  const ext = originalName.split('.').pop() || '';
+  const baseName = originalName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9]/g, '_');
+  return `${baseName}_${timestamp}_${random}.${ext}`;
+}
+
+async function uploadToStorage(file: Blob, fileName: string, type: 'video' | 'image'): Promise<string> {
+  const folder = type === 'video' ? 'videos' : 'images';
+  const path = `${folder}/${generateUniqueFileName(fileName)}`;
+
+  console.log('Uploading to storage:', path, 'size:', file.size);
+
+  const { data, error } = await supabase.storage
+    .from('media')
+    .upload(path, file, {
+      cacheControl: '3600',
+      upsert: false
+    });
+
+  if (error) {
+    console.error('Storage upload error:', error);
+    throw error;
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from('media')
+    .getPublicUrl(data.path);
+
+  console.log('Upload complete:', urlData.publicUrl);
+  return urlData.publicUrl;
 }
 
 export async function processFiles(
@@ -93,7 +134,7 @@ export async function processFiles(
 ): Promise<Array<{ id: string; name: string; url: string; type: typeof type }>> {
   const results = await Promise.all(
     files.map(async (file) => {
-      let url: string;
+      let fileToUpload: Blob = file;
       let name = file.name;
 
       // PRODUCTION: Only accept web-friendly formats
@@ -103,57 +144,53 @@ export async function processFiles(
             alert(`${file.name}: Only JPG, PNG, GIF, and WebP images are supported. Please convert HEIC files before uploading.`);
             return null;
           }
-          url = await fileToDataUrl(file);
         } else if (type === 'video') {
           if (!isWebFriendlyVideo(file)) {
             alert(`${file.name}: Only MP4 and WebM videos are supported. Please convert MOV files before uploading.`);
             return null;
           }
-          url = await fileToDataUrl(file);
-        } else {
-          url = await fileToDataUrl(file);
         }
       }
       // LOCAL DEV: Use conversion server
       else {
-        if (type === 'image') {
+        if (type === 'image' && isHeicFile(file)) {
           try {
-            console.log('Processing image:', file.name);
-            const converted = await convertHeicToJpeg(file);
-            url = converted.dataUrl;
-            name = converted.name;
-            console.log('Image processed successfully:', name);
+            console.log('Converting HEIC:', file.name);
+            fileToUpload = await convertHeicToJpeg(file);
+            name = file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg');
+            console.log('HEIC converted successfully');
           } catch (error) {
-            console.error('Image processing failed:', error);
-            // Fall back to direct data URL if conversion fails
-            url = await fileToDataUrl(file);
+            console.error('HEIC conversion failed:', error);
+            // Continue with original file
           }
         }
-        // Convert MOV to MP4 via server
         else if (type === 'video' && isMovFile(file)) {
           try {
             console.log('Converting MOV:', file.name);
-            const converted = await convertMovToMp4(file);
-            url = converted.dataUrl;
-            name = converted.name;
-            console.log('Video converted successfully:', name);
+            fileToUpload = await convertMovToMp4(file);
+            name = file.name.replace(/\.mov$/i, '.mp4');
+            console.log('MOV converted successfully');
           } catch (error) {
             console.error('MOV conversion failed:', error);
             alert(`Failed to convert ${file.name}. Large videos may take time - check if conversion server is running.`);
             return null;
           }
         }
-        else {
-          url = await fileToDataUrl(file);
-        }
       }
 
-      return {
-        id: Math.random().toString(36).substr(2, 9),
-        name,
-        url,
-        type,
-      };
+      try {
+        const url = await uploadToStorage(fileToUpload, name, type);
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          name,
+          url,
+          type,
+        };
+      } catch (error) {
+        console.error('Upload failed:', error);
+        alert(`Failed to upload ${name}. Please try again.`);
+        return null;
+      }
     })
   );
 
