@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save, Check } from 'lucide-react';
-import { Folder, ViewState, Asset } from './types';
+import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save, Check, FolderOpen } from 'lucide-react';
+import { Folder, ViewState, Asset, Subfolder } from './types';
 import { useAuth } from './contexts/AuthContext';
 import LoginScreen from './components/LoginScreen';
 import * as db from './services/database';
@@ -50,10 +50,35 @@ const FolderCard: React.FC<{ folder: Folder; onClick: () => void; onDelete: (id:
     <h3 className="font-bold text-slate-800 text-lg truncate mb-1">{folder.name}</h3>
     <div className="flex items-center gap-3 text-sm text-slate-500">
       <span className="flex items-center gap-1">
-        <Play size={14} /> {folder.videos.length}
+        <FolderOpen size={14} /> {folder.subfolderCount} subfolder{folder.subfolderCount !== 1 ? 's' : ''}
+      </span>
+    </div>
+  </div>
+);
+
+const SubfolderCard: React.FC<{ subfolder: Subfolder; onClick: () => void; onDelete: (id: string) => void }> = ({ subfolder, onClick, onDelete }) => (
+  <div
+    onClick={onClick}
+    className="group bg-white rounded-2xl shadow-sm border border-slate-200 p-5 hover:shadow-md hover:border-brand-red/30 transition-all cursor-pointer relative"
+  >
+    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(subfolder.id); }}
+        className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50"
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+    <div className="w-14 h-14 bg-brand-red/10 rounded-xl flex items-center justify-center text-brand-red mb-4">
+      <FolderOpen size={28} />
+    </div>
+    <h3 className="font-bold text-slate-800 text-lg truncate mb-1">{subfolder.name}</h3>
+    <div className="flex items-center gap-3 text-sm text-slate-500">
+      <span className="flex items-center gap-1">
+        <Play size={14} /> {subfolder.videos.length}
       </span>
       <span className="flex items-center gap-1">
-        <ImageIcon size={14} /> {folder.images.length}
+        <ImageIcon size={14} /> {subfolder.images.length}
       </span>
     </div>
   </div>
@@ -63,17 +88,21 @@ export default function App() {
   const { user, loading, signOut, updateProfile } = useAuth();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [activeSubfolderId, setActiveSubfolderId] = useState<string | null>(null);
+  const [subfolders, setSubfolders] = useState<Subfolder[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewState, setViewState] = useState<ViewState>('grid');
 
   // Modal / Edit State
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editingSubfolderId, setEditingSubfolderId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
   const [tempVideos, setTempVideos] = useState<Asset[]>([]);
   const [tempImages, setTempImages] = useState<Asset[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [activeVideoIdx, setActiveVideoIdx] = useState(0);
   const [isLoadingFolders, setIsLoadingFolders] = useState(true);
+  const [isLoadingSubfolders, setIsLoadingSubfolders] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [isUploadingVideos, setIsUploadingVideos] = useState(false);
   const [isUploadingImages, setIsUploadingImages] = useState(false);
@@ -81,10 +110,11 @@ export default function App() {
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [profileDisplayName, setProfileDisplayName] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [folderNotes, setFolderNotes] = useState('');
+  const [subfolderNotes, setSubfolderNotes] = useState('');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteConfirmType, setDeleteConfirmType] = useState<'folder' | 'subfolder'>('folder');
 
   const loadFolders = useCallback(async () => {
     if (!user) return;
@@ -98,39 +128,44 @@ export default function App() {
     } catch (error) {
       console.error('Failed to load folders:', error);
       setDbError('Failed to load folders from database. Make sure the database is running.');
-      // Fallback to localStorage for dev
-      const saved = localStorage.getItem('docuvision_folders');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          const migrated = parsed.map((f: any) => ({
-            ...f,
-            videos: f.videos || (f.video ? [f.video] : [])
-          }));
-          setFolders(migrated);
-        } catch (e) {
-          console.error("Failed to parse localStorage folders", e);
-        }
-      }
     } finally {
       setIsLoadingFolders(false);
     }
   }, [user]);
 
+  const loadSubfolders = useCallback(async (folderId: string) => {
+    setIsLoadingSubfolders(true);
+    setDbError(null);
+
+    try {
+      const loadedSubfolders = await db.getSubfolders(folderId);
+      setSubfolders(loadedSubfolders);
+    } catch (error) {
+      console.error('Failed to load subfolders:', error);
+      setDbError('Failed to load subfolders from database.');
+    } finally {
+      setIsLoadingSubfolders(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadFolders();
   }, [loadFolders]);
 
-  // Update notes when folder changes
+  // Load subfolders when entering folder view
   useEffect(() => {
-    const activeFolder = folders.find(f => f.id === activeFolderId);
-    if (activeFolder) {
-      setFolderNotes(activeFolder.notes || '');
+    if (viewState === 'folder' && activeFolderId) {
+      loadSubfolders(activeFolderId);
     }
-  }, [activeFolderId, folders]);
+  }, [viewState, activeFolderId, loadSubfolders]);
 
-  // Note: localStorage backup removed - data persists in database
-  // Base64 files are too large for localStorage quota
+  // Update notes when subfolder changes
+  useEffect(() => {
+    const activeSubfolder = subfolders.find(sf => sf.id === activeSubfolderId);
+    if (activeSubfolder) {
+      setSubfolderNotes(activeSubfolder.notes || '');
+    }
+  }, [activeSubfolderId, subfolders]);
 
   // Show loading state while checking auth
   if (loading) {
@@ -153,65 +188,65 @@ export default function App() {
     setDbError(null);
 
     try {
-      if (editingFolderId) {
-        const updatedFolder = await db.updateFolder(
-          editingFolderId,
-          newFolderName,
-          tempVideos,
-          tempImages
-        );
-        setFolders(prev => prev.map(f => f.id === editingFolderId ? updatedFolder : f));
-      } else {
-        const newFolder = await db.createFolder(
-          user.id,
-          newFolderName,
-          tempVideos,
-          tempImages
-        );
-        setFolders(prev => [newFolder, ...prev]);
+      if (viewState === 'grid') {
+        // Creating/editing a folder (no assets)
+        if (editingFolderId) {
+          const updatedFolder = await db.updateFolder(editingFolderId, newFolderName);
+          setFolders(prev => prev.map(f => f.id === editingFolderId ? updatedFolder : f));
+        } else {
+          const newFolder = await db.createFolder(user.id, newFolderName);
+          setFolders(prev => [newFolder, ...prev]);
+        }
+      } else if (viewState === 'folder' && activeFolderId) {
+        // Creating/editing a subfolder (with assets)
+        if (editingSubfolderId) {
+          const updatedSubfolder = await db.updateSubfolder(
+            editingSubfolderId,
+            newFolderName,
+            tempVideos,
+            tempImages
+          );
+          setSubfolders(prev => prev.map(sf => sf.id === editingSubfolderId ? updatedSubfolder : sf));
+          // Update folder's subfolder count
+          setFolders(prev => prev.map(f => f.id === activeFolderId ? { ...f, subfolderCount: prev.find(pf => pf.id === activeFolderId)?.subfolderCount || 0 } : f));
+        } else {
+          const newSubfolder = await db.createSubfolder(
+            activeFolderId,
+            newFolderName,
+            tempVideos,
+            tempImages
+          );
+          setSubfolders(prev => [newSubfolder, ...prev]);
+          // Increment folder's subfolder count
+          setFolders(prev => prev.map(f => f.id === activeFolderId ? { ...f, subfolderCount: f.subfolderCount + 1 } : f));
+        }
       }
       resetModal();
     } catch (error) {
-      console.error('Failed to save folder:', error);
-      setDbError('Failed to save folder. Using local storage as fallback.');
-      // Fallback to local state
-      if (editingFolderId) {
-        setFolders(prev => prev.map(f => f.id === editingFolderId ? {
-          ...f,
-          name: newFolderName,
-          videos: tempVideos,
-          images: tempImages
-        } : f));
-      } else {
-        const newFolder: Folder = {
-          id: Math.random().toString(36).substr(2, 9),
-          name: newFolderName,
-          videos: tempVideos,
-          images: tempImages,
-          createdAt: Date.now()
-        };
-        setFolders(prev => [newFolder, ...prev]);
-      }
-      resetModal();
+      console.error('Failed to save:', error);
+      setDbError('Failed to save. Please try again.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const openEditModal = () => {
-    const folder = folders.find(f => f.id === activeFolderId);
-    if (folder) {
-      setEditingFolderId(folder.id);
-      setNewFolderName(folder.name);
-      setTempVideos(folder.videos);
-      setTempImages(folder.images);
-      setIsModalOpen(true);
+    if (viewState === 'subfolder') {
+      const subfolder = subfolders.find(sf => sf.id === activeSubfolderId);
+      if (subfolder) {
+        setEditingSubfolderId(subfolder.id);
+        setNewFolderName(subfolder.name);
+        setTempVideos(subfolder.videos);
+        setTempImages(subfolder.images);
+        setIsModalOpen(true);
+      }
     }
   };
 
   const resetModal = () => {
     setIsModalOpen(false);
     setEditingFolderId(null);
+    setEditingSubfolderId(null);
     setNewFolderName('');
     setTempVideos([]);
     setTempImages([]);
@@ -243,25 +278,46 @@ export default function App() {
 
   const handleDeleteFolder = (id: string) => {
     setDeleteConfirmId(id);
+    setDeleteConfirmType('folder');
   };
 
-  const confirmDeleteFolder = async () => {
+  const handleDeleteSubfolder = (id: string) => {
+    setDeleteConfirmId(id);
+    setDeleteConfirmType('subfolder');
+  };
+
+  const confirmDelete = async () => {
     if (!deleteConfirmId) return;
 
     try {
-      await db.deleteFolder(deleteConfirmId);
-      setFolders(prev => prev.filter(f => f.id !== deleteConfirmId));
-      if (activeFolderId === deleteConfirmId) setViewState('grid');
+      if (deleteConfirmType === 'folder') {
+        await db.deleteFolder(deleteConfirmId);
+        setFolders(prev => prev.filter(f => f.id !== deleteConfirmId));
+        if (activeFolderId === deleteConfirmId) {
+          setViewState('grid');
+          setActiveFolderId(null);
+        }
+      } else {
+        await db.deleteSubfolder(deleteConfirmId);
+        setSubfolders(prev => prev.filter(sf => sf.id !== deleteConfirmId));
+        // Decrement folder's subfolder count
+        if (activeFolderId) {
+          setFolders(prev => prev.map(f => f.id === activeFolderId ? { ...f, subfolderCount: Math.max(0, f.subfolderCount - 1) } : f));
+        }
+        if (activeSubfolderId === deleteConfirmId) {
+          setViewState('folder');
+          setActiveSubfolderId(null);
+        }
+      }
     } catch (error) {
-      console.error('Failed to delete folder:', error);
-      setFolders(prev => prev.filter(f => f.id !== deleteConfirmId));
-      if (activeFolderId === deleteConfirmId) setViewState('grid');
+      console.error('Failed to delete:', error);
     } finally {
       setDeleteConfirmId(null);
     }
   };
 
   const activeFolder = folders.find(f => f.id === activeFolderId);
+  const activeSubfolder = subfolders.find(sf => sf.id === activeSubfolderId);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -269,12 +325,12 @@ export default function App() {
   };
 
   const handleSaveNotes = async () => {
-    if (!activeFolder) return;
+    if (!activeSubfolder) return;
     setIsSavingNotes(true);
     try {
-      await db.updateFolderNotes(activeFolder.id, folderNotes);
-      setFolders(prev => prev.map(f =>
-        f.id === activeFolder.id ? { ...f, notes: folderNotes } : f
+      await db.updateSubfolderNotes(activeSubfolder.id, subfolderNotes);
+      setSubfolders(prev => prev.map(sf =>
+        sf.id === activeSubfolder.id ? { ...sf, notes: subfolderNotes } : sf
       ));
       showToast('Notes saved successfully');
     } catch (error) {
@@ -284,6 +340,28 @@ export default function App() {
       setIsSavingNotes(false);
     }
   };
+
+  const handleBack = () => {
+    if (viewState === 'subfolder') {
+      setViewState('folder');
+      setActiveSubfolderId(null);
+      setActiveVideoIdx(0);
+    } else if (viewState === 'folder') {
+      setViewState('grid');
+      setActiveFolderId(null);
+      setSubfolders([]);
+    }
+  };
+
+  // Determine modal title and whether to show asset inputs
+  const isSubfolderModal = viewState === 'folder' || editingSubfolderId;
+  const modalTitle = editingSubfolderId
+    ? 'Edit Subfolder'
+    : editingFolderId
+      ? 'Edit Folder'
+      : viewState === 'folder'
+        ? 'Create Subfolder'
+        : 'Create Folder';
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -306,10 +384,25 @@ export default function App() {
           >
             <Plus size={18} /> Create Folder
           </button>
+        ) : viewState === 'folder' ? (
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleBack}
+              className="text-slate-300 hover:text-white font-medium flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-all"
+            >
+              <ChevronLeft size={20} /> Back
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-md active:scale-95"
+            >
+              <Plus size={18} /> Create Subfolder
+            </button>
+          </div>
         ) : (
           <div className="flex items-center gap-4">
             <button
-              onClick={() => { setViewState('grid'); setActiveVideoIdx(0); }}
+              onClick={handleBack}
               className="text-slate-300 hover:text-white font-medium flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-white/10 transition-all"
             >
               <ChevronLeft size={20} /> Back
@@ -318,7 +411,7 @@ export default function App() {
               onClick={openEditModal}
               className="bg-white/10 border border-white/20 text-white px-4 py-2 rounded-xl font-semibold hover:bg-white/20 transition-all flex items-center gap-2"
             >
-              <Edit3 size={18} /> Edit Folder
+              <Edit3 size={18} /> Edit Subfolder
             </button>
           </div>
         )}
@@ -394,17 +487,44 @@ export default function App() {
           </div>
         )}
 
+        {/* Breadcrumb */}
+        {viewState !== 'grid' && (
+          <div className="mb-6 flex items-center gap-2 text-sm text-slate-500">
+            <button onClick={() => { setViewState('grid'); setActiveFolderId(null); setSubfolders([]); }} className="hover:text-brand-red transition-colors">
+              Folders
+            </button>
+            {activeFolder && (
+              <>
+                <span>/</span>
+                <button
+                  onClick={() => { setViewState('folder'); setActiveSubfolderId(null); }}
+                  className={viewState === 'folder' ? 'text-slate-800 font-medium' : 'hover:text-brand-red transition-colors'}
+                >
+                  {activeFolder.name}
+                </button>
+              </>
+            )}
+            {activeSubfolder && viewState === 'subfolder' && (
+              <>
+                <span>/</span>
+                <span className="text-slate-800 font-medium">{activeSubfolder.name}</span>
+              </>
+            )}
+          </div>
+        )}
+
         {isLoadingFolders ? (
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-red"></div>
           </div>
         ) : viewState === 'grid' ? (
+          // Grid View - Show Folders
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {folders.map(f => (
-              <FolderCard 
-                key={f.id} 
-                folder={f} 
-                onClick={() => { setActiveFolderId(f.id); setViewState('viewing'); }} 
+              <FolderCard
+                key={f.id}
+                folder={f}
+                onClick={() => { setActiveFolderId(f.id); setViewState('folder'); }}
                 onDelete={handleDeleteFolder}
               />
             ))}
@@ -416,23 +536,56 @@ export default function App() {
               <span className="font-semibold">New Folder</span>
             </button>
           </div>
+        ) : viewState === 'folder' ? (
+          // Folder View - Show Subfolders
+          <div className="animate-in slide-in-from-bottom-4 duration-500">
+            <div className="border-b border-slate-200 pb-6 mb-6">
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">{activeFolder?.name}</h2>
+              <p className="text-slate-500">{subfolders.length} subfolder{subfolders.length !== 1 ? 's' : ''}</p>
+            </div>
+
+            {isLoadingSubfolders ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-red"></div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {subfolders.map(sf => (
+                  <SubfolderCard
+                    key={sf.id}
+                    subfolder={sf}
+                    onClick={() => { setActiveSubfolderId(sf.id); setViewState('subfolder'); }}
+                    onDelete={handleDeleteSubfolder}
+                  />
+                ))}
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl p-5 hover:border-brand-red hover:bg-red-50 transition-all text-slate-400 hover:text-brand-red min-h-[160px]"
+                >
+                  <Plus size={32} className="mb-2" />
+                  <span className="font-semibold">New Subfolder</span>
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
+          // Subfolder View - Show Videos and Images
           <div className="flex flex-col h-full gap-8 animate-in slide-in-from-bottom-4 duration-500">
             <div className="border-b border-slate-200 pb-6">
-              <h2 className="text-3xl font-bold text-slate-900 mb-2">{activeFolder?.name}</h2>
-              <p className="text-slate-500">Last updated {new Date(activeFolder?.createdAt || 0).toLocaleDateString()}</p>
+              <h2 className="text-3xl font-bold text-slate-900 mb-2">{activeSubfolder?.name}</h2>
+              <p className="text-slate-500">Last updated {new Date(activeSubfolder?.createdAt || 0).toLocaleDateString()}</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-[600px]">
               {/* Left Side: Video Section */}
               <div className="lg:col-span-7 flex flex-col gap-6">
                 <div className="bg-brand-navy rounded-3xl overflow-hidden shadow-2xl relative aspect-video flex items-center justify-center">
-                  {activeFolder?.videos && activeFolder.videos.length > 0 ? (
-                    <video 
-                      key={activeFolder.videos[activeVideoIdx]?.id}
-                      controls 
+                  {activeSubfolder?.videos && activeSubfolder.videos.length > 0 ? (
+                    <video
+                      key={activeSubfolder.videos[activeVideoIdx]?.id}
+                      controls
                       className="w-full h-full object-contain"
-                      src={activeFolder.videos[activeVideoIdx]?.url}
+                      src={activeSubfolder.videos[activeVideoIdx]?.url}
                     />
                   ) : (
                     <div className="text-slate-500 flex flex-col items-center">
@@ -441,11 +594,11 @@ export default function App() {
                     </div>
                   )}
                 </div>
-                
+
                 {/* Video Selector if multiple */}
-                {activeFolder?.videos && activeFolder.videos.length > 1 && (
+                {activeSubfolder?.videos && activeSubfolder.videos.length > 1 && (
                   <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                    {activeFolder.videos.map((vid, idx) => (
+                    {activeSubfolder.videos.map((vid, idx) => (
                       <button
                         key={vid.id}
                         onClick={() => setActiveVideoIdx(idx)}
@@ -466,7 +619,7 @@ export default function App() {
                     </div>
                     <button
                       onClick={handleSaveNotes}
-                      disabled={isSavingNotes || folderNotes === (activeFolder?.notes || '')}
+                      disabled={isSavingNotes || subfolderNotes === (activeSubfolder?.notes || '')}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-brand-red text-white hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
                       <Save size={14} />
@@ -474,9 +627,9 @@ export default function App() {
                     </button>
                   </div>
                   <textarea
-                    value={folderNotes}
-                    onChange={(e) => setFolderNotes(e.target.value)}
-                    placeholder="Add notes for this folder..."
+                    value={subfolderNotes}
+                    onChange={(e) => setSubfolderNotes(e.target.value)}
+                    placeholder="Add notes for this subfolder..."
                     className="w-full h-32 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-red focus:bg-white transition-all resize-none text-slate-700"
                   />
                 </div>
@@ -489,18 +642,18 @@ export default function App() {
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <span className="font-bold text-slate-700 text-lg">Supporting Assets</span>
                     <span className="text-xs bg-slate-200 px-2 py-1 rounded-full text-slate-600 font-medium">
-                      {activeFolder?.images.length} images
+                      {activeSubfolder?.images.length} images
                     </span>
                   </div>
                   <div className="flex-1 overflow-y-auto custom-scrollbar p-4 max-h-[700px]">
-                    {activeFolder?.images.length === 0 ? (
+                    {activeSubfolder?.images.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-slate-400 py-20">
                         <ImageIcon size={32} className="mb-2 opacity-30" />
                         <p className="text-sm">No images added</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-3">
-                        {activeFolder?.images.map((img, idx) => (
+                        {activeSubfolder?.images.map((img, idx) => (
                           <div key={img.id} className="group relative aspect-square">
                             <img
                               src={img.url}
@@ -527,93 +680,98 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-navy/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100">
-              <h2 className="text-2xl font-bold text-slate-800">{editingFolderId ? 'Edit Folder' : 'Create New Folder'}</h2>
+              <h2 className="text-2xl font-bold text-slate-800">{modalTitle}</h2>
               <button onClick={resetModal} className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-xl transition-all">
                 <X size={24} />
               </button>
             </div>
-            
+
             <div className="p-8 space-y-8 overflow-y-auto max-h-[70vh] custom-scrollbar">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2 uppercase tracking-wider">Folder Name</label>
-                <input 
+                <label className="block text-sm font-semibold text-slate-700 mb-2 uppercase tracking-wider">
+                  {isSubfolderModal ? 'Subfolder Name' : 'Folder Name'}
+                </label>
+                <input
                   autoFocus
-                  type="text" 
+                  type="text"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="e.g. Q3 Marketing Showcase"
+                  placeholder={isSubfolderModal ? "e.g. Q3 Marketing Showcase" : "e.g. Marketing Materials"}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-red focus:bg-white transition-all text-lg font-medium"
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Videos Section */}
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2 uppercase tracking-wider">Videos ({tempVideos.length})</label>
-                  <FileInput
-                    label="Add Videos"
-                    icon={<Play size={32} />}
-                    accept="video/*"
-                    multiple
-                    onChange={handleVideoUpload}
-                  />
-                  {isUploadingVideos && (
-                    <div className="mt-4 flex items-center gap-3 bg-brand-red/10 p-4 rounded-xl border border-brand-red/20">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-red"></div>
-                      <span className="text-sm text-brand-red font-medium">Converting video... This may take a few minutes for large files.</span>
-                    </div>
-                  )}
-                  {tempVideos.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      {tempVideos.map(vid => (
-                        <div key={vid.id} className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-100 group">
-                          <video className="w-16 h-10 object-cover rounded-lg" src={vid.url} />
-                          <span className="flex-1 text-sm text-slate-600 truncate">{vid.name}</span>
-                          <button 
-                            onClick={() => setTempVideos(prev => prev.filter(v => v.id !== vid.id))}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              {/* Only show asset inputs for subfolders */}
+              {isSubfolderModal && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Videos Section */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2 uppercase tracking-wider">Videos ({tempVideos.length})</label>
+                    <FileInput
+                      label="Add Videos"
+                      icon={<Play size={32} />}
+                      accept="video/*"
+                      multiple
+                      onChange={handleVideoUpload}
+                    />
+                    {isUploadingVideos && (
+                      <div className="mt-4 flex items-center gap-3 bg-brand-red/10 p-4 rounded-xl border border-brand-red/20">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-red"></div>
+                        <span className="text-sm text-brand-red font-medium">Converting video... This may take a few minutes for large files.</span>
+                      </div>
+                    )}
+                    {tempVideos.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        {tempVideos.map(vid => (
+                          <div key={vid.id} className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-100 group">
+                            <video className="w-16 h-10 object-cover rounded-lg" src={vid.url} />
+                            <span className="flex-1 text-sm text-slate-600 truncate">{vid.name}</span>
+                            <button
+                              onClick={() => setTempVideos(prev => prev.filter(v => v.id !== vid.id))}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-                {/* Images Section */}
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2 uppercase tracking-wider">Supporting Images ({tempImages.length})</label>
-                  <FileInput
-                    label="Add Supporting Images"
-                    icon={<ImageIcon size={32} />}
-                    accept="image/*"
-                    multiple
-                    onChange={handleImagesUpload}
-                  />
-                  {isUploadingImages && (
-                    <div className="mt-4 flex items-center gap-3 bg-brand-red/10 p-4 rounded-xl border border-brand-red/20">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-red"></div>
-                      <span className="text-sm text-brand-red font-medium">Processing images...</span>
-                    </div>
-                  )}
-                  {tempImages.length > 0 && (
-                    <div className="mt-4 grid grid-cols-4 gap-2">
-                      {tempImages.map(img => (
-                        <div key={img.id} className="relative aspect-square group">
-                          <img src={img.url} className="w-full h-full object-cover rounded-lg border border-slate-200" />
-                          <button 
-                            onClick={() => setTempImages(prev => prev.filter(i => i.id !== img.id))}
-                            className="absolute -top-1 -right-1 bg-red-500 text-white p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {/* Images Section */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-2 uppercase tracking-wider">Supporting Images ({tempImages.length})</label>
+                    <FileInput
+                      label="Add Supporting Images"
+                      icon={<ImageIcon size={32} />}
+                      accept="image/*"
+                      multiple
+                      onChange={handleImagesUpload}
+                    />
+                    {isUploadingImages && (
+                      <div className="mt-4 flex items-center gap-3 bg-brand-red/10 p-4 rounded-xl border border-brand-red/20">
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand-red"></div>
+                        <span className="text-sm text-brand-red font-medium">Processing images...</span>
+                      </div>
+                    )}
+                    {tempImages.length > 0 && (
+                      <div className="mt-4 grid grid-cols-4 gap-2">
+                        {tempImages.map(img => (
+                          <div key={img.id} className="relative aspect-square group">
+                            <img src={img.url} className="w-full h-full object-cover rounded-lg border border-slate-200" />
+                            <button
+                              onClick={() => setTempImages(prev => prev.filter(i => i.id !== img.id))}
+                              className="absolute -top-1 -right-1 bg-red-500 text-white p-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="px-8 py-6 bg-slate-50 flex items-center justify-end gap-3">
@@ -625,7 +783,7 @@ export default function App() {
                 disabled={isSaving || !newFolderName || isUploadingVideos || isUploadingImages}
                 className="bg-brand-red hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed text-white px-8 py-2.5 rounded-xl font-semibold shadow-lg transition-all active:scale-95 flex items-center gap-2"
               >
-                {isSaving ? 'Saving...' : isUploadingVideos || isUploadingImages ? 'Uploading...' : (editingFolderId ? 'Save Changes' : 'Create Folder')}
+                {isSaving ? 'Saving...' : isUploadingVideos || isUploadingImages ? 'Uploading...' : (editingFolderId || editingSubfolderId ? 'Save Changes' : `Create ${isSubfolderModal ? 'Subfolder' : 'Folder'}`)}
               </button>
             </div>
           </div>
@@ -707,9 +865,14 @@ export default function App() {
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Trash2 size={24} className="text-red-600" />
               </div>
-              <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Delete Folder?</h3>
+              <h3 className="text-lg font-bold text-slate-800 text-center mb-2">
+                Delete {deleteConfirmType === 'folder' ? 'Folder' : 'Subfolder'}?
+              </h3>
               <p className="text-slate-500 text-center text-sm">
-                This will permanently delete this folder and all its contents. This action cannot be undone.
+                {deleteConfirmType === 'folder'
+                  ? 'This will permanently delete this folder, all its subfolders, and all assets. This action cannot be undone.'
+                  : 'This will permanently delete this subfolder and all its contents. This action cannot be undone.'
+                }
               </p>
             </div>
             <div className="px-6 py-4 bg-slate-50 flex gap-3">
@@ -720,7 +883,7 @@ export default function App() {
                 Cancel
               </button>
               <button
-                onClick={confirmDeleteFolder}
+                onClick={confirmDelete}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl font-semibold transition-all"
               >
                 Delete

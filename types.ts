@@ -6,14 +6,24 @@ export interface Asset {
   type: 'image' | 'video';
 }
 
-export interface Folder {
+export interface Subfolder {
   id: string;
+  folderId: string;
   name: string;
   videos: Asset[];
   images: Asset[];
+  createdAt: number;
+  notes?: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  subfolders: Subfolder[];
+  subfolderCount: number;
   createdAt: number;
   aiDescription?: string;
   notes?: string;
 }
 
-export type ViewState = 'grid' | 'viewing';
+export type ViewState = 'grid' | 'folder' | 'subfolder';
