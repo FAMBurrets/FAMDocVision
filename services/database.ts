@@ -43,11 +43,11 @@ function toAppFolder(dbFolder: DbFolder, assets: DbAsset[]): Folder {
   };
 }
 
-export async function getFolders(userId: string): Promise<Folder[]> {
+export async function getFolders(_userId?: string): Promise<Folder[]> {
+  // Multi-tenant: all users see all folders
   const { data: folders, error: foldersError } = await supabase
     .from('folders')
     .select('*')
-    .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
   if (foldersError) {
