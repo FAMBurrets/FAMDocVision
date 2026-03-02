@@ -255,6 +255,8 @@ export async function createSubfolder(
   videos: Asset[],
   images: Asset[]
 ): Promise<Subfolder> {
+  console.log('Creating subfolder:', { folderId, name, videoCount: videos.length, imageCount: images.length });
+
   const { data: subfolder, error: subfolderError } = await supabase
     .from('subfolders')
     .insert({ folder_id: folderId, name })
@@ -266,22 +268,46 @@ export async function createSubfolder(
     throw subfolderError;
   }
 
-  const allAssets = [
-    ...videos.map(v => ({ folder_id: folderId, subfolder_id: subfolder.id, name: v.name, url: v.url, type: 'video' })),
-    ...images.map(i => ({ folder_id: folderId, subfolder_id: subfolder.id, name: i.name, url: i.url, type: 'image' })),
-  ];
+  console.log('Subfolder created:', subfolder.id);
 
-  if (allAssets.length > 0) {
-    const { error: assetsError } = await supabase
+  // Insert assets one at a time to avoid timeout with large base64 data
+  for (const video of videos) {
+    console.log('Inserting video:', video.name, 'size:', video.url.length);
+    const { error } = await supabase
       .from('assets')
-      .insert(allAssets);
-
-    if (assetsError) {
-      console.error('Error creating assets:', assetsError);
-      throw assetsError;
+      .insert({
+        folder_id: folderId,
+        subfolder_id: subfolder.id,
+        name: video.name,
+        url: video.url,
+        type: 'video'
+      });
+    if (error) {
+      console.error('Error inserting video:', error);
+      throw error;
     }
+    console.log('Video inserted:', video.name);
   }
 
+  for (const image of images) {
+    console.log('Inserting image:', image.name, 'size:', image.url.length);
+    const { error } = await supabase
+      .from('assets')
+      .insert({
+        folder_id: folderId,
+        subfolder_id: subfolder.id,
+        name: image.name,
+        url: image.url,
+        type: 'image'
+      });
+    if (error) {
+      console.error('Error inserting image:', error);
+      throw error;
+    }
+    console.log('Image inserted:', image.name);
+  }
+
+  console.log('All assets inserted, fetching subfolder');
   return (await getSubfolderById(subfolder.id))!;
 }
 
@@ -291,6 +317,8 @@ export async function updateSubfolder(
   videos: Asset[],
   images: Asset[]
 ): Promise<Subfolder> {
+  console.log('Updating subfolder:', { subfolderId, name, videoCount: videos.length, imageCount: images.length });
+
   // Get the subfolder to find folder_id
   const { data: subfolder, error: getError } = await supabase
     .from('subfolders')
@@ -313,6 +341,7 @@ export async function updateSubfolder(
   }
 
   // Delete existing assets
+  console.log('Deleting existing assets');
   const { error: deleteError } = await supabase
     .from('assets')
     .delete()
@@ -323,23 +352,42 @@ export async function updateSubfolder(
     throw deleteError;
   }
 
-  // Insert new assets
-  const allAssets = [
-    ...videos.map(v => ({ folder_id: subfolder.folder_id, subfolder_id: subfolderId, name: v.name, url: v.url, type: 'video' })),
-    ...images.map(i => ({ folder_id: subfolder.folder_id, subfolder_id: subfolderId, name: i.name, url: i.url, type: 'image' })),
-  ];
-
-  if (allAssets.length > 0) {
-    const { error: insertError } = await supabase
+  // Insert assets one at a time to avoid timeout with large base64 data
+  for (const video of videos) {
+    console.log('Inserting video:', video.name, 'size:', video.url.length);
+    const { error } = await supabase
       .from('assets')
-      .insert(allAssets);
-
-    if (insertError) {
-      console.error('Error inserting assets:', insertError);
-      throw insertError;
+      .insert({
+        folder_id: subfolder.folder_id,
+        subfolder_id: subfolderId,
+        name: video.name,
+        url: video.url,
+        type: 'video'
+      });
+    if (error) {
+      console.error('Error inserting video:', error);
+      throw error;
     }
   }
 
+  for (const image of images) {
+    console.log('Inserting image:', image.name, 'size:', image.url.length);
+    const { error } = await supabase
+      .from('assets')
+      .insert({
+        folder_id: subfolder.folder_id,
+        subfolder_id: subfolderId,
+        name: image.name,
+        url: image.url,
+        type: 'image'
+      });
+    if (error) {
+      console.error('Error inserting image:', error);
+      throw error;
+    }
+  }
+
+  console.log('Update complete');
   return (await getSubfolderById(subfolderId))!;
 }
 

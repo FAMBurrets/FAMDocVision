@@ -74,8 +74,10 @@ services:
           headers:
             - Accept
             - Accept-Version
+            - Accept-Profile
             - Content-Length
             - Content-MD5
+            - Content-Profile
             - Content-Type
             - Date
             - X-Auth-Token

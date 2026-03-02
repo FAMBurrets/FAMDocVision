@@ -222,9 +222,10 @@ export default function App() {
         }
       }
       resetModal();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save:', error);
-      setDbError('Failed to save. Please try again.');
+      const errorMessage = error?.message || error?.details || 'Unknown error';
+      setDbError(`Failed to save: ${errorMessage}`);
     } finally {
       setIsSaving(false);
     }
