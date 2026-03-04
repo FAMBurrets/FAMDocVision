@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Save, Check, FolderOpen } from 'lucide-react';
-import { Folder, ViewState, Asset, Subfolder } from './types';
+import { Plus, Folder as FolderIcon, Play, Image as ImageIcon, X, Trash2, ChevronLeft, Edit3, LogOut, AlertCircle, User, Settings, MessageSquare, Send, Check, FolderOpen } from 'lucide-react';
+import { Folder, ViewState, Asset, Subfolder, Comment } from './types';
 import { useAuth } from './contexts/AuthContext';
 import LoginScreen from './components/LoginScreen';
 import * as db from './services/database';
@@ -110,8 +110,10 @@ export default function App() {
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   const [profileDisplayName, setProfileDisplayName] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [subfolderNotes, setSubfolderNotes] = useState('');
-  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmType, setDeleteConfirmType] = useState<'folder' | 'subfolder'>('folder');
@@ -159,13 +161,27 @@ export default function App() {
     }
   }, [viewState, activeFolderId, loadSubfolders]);
 
-  // Update notes when subfolder changes
-  useEffect(() => {
-    const activeSubfolder = subfolders.find(sf => sf.id === activeSubfolderId);
-    if (activeSubfolder) {
-      setSubfolderNotes(activeSubfolder.notes || '');
+  // Load comments when entering subfolder view
+  const loadComments = useCallback(async (subfolderId: string) => {
+    setIsLoadingComments(true);
+    try {
+      const loadedComments = await db.getComments(subfolderId);
+      setComments(loadedComments);
+    } catch (error) {
+      console.error('Failed to load comments:', error);
+    } finally {
+      setIsLoadingComments(false);
     }
-  }, [activeSubfolderId, subfolders]);
+  }, []);
+
+  useEffect(() => {
+    if (viewState === 'subfolder' && activeSubfolderId) {
+      loadComments(activeSubfolderId);
+    } else {
+      setComments([]);
+      setNewComment('');
+    }
+  }, [viewState, activeSubfolderId, loadComments]);
 
   // Show loading state while checking auth
   if (loading) {
@@ -325,20 +341,29 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleSaveNotes = async () => {
-    if (!activeSubfolder) return;
-    setIsSavingNotes(true);
+  const handlePostComment = async () => {
+    if (!activeSubfolder || !newComment.trim() || !user) return;
+    setIsPostingComment(true);
     try {
-      await db.updateSubfolderNotes(activeSubfolder.id, subfolderNotes);
-      setSubfolders(prev => prev.map(sf =>
-        sf.id === activeSubfolder.id ? { ...sf, notes: subfolderNotes } : sf
-      ));
-      showToast('Notes saved successfully');
+      const userName = user.user_metadata?.full_name || user.email || 'User';
+      const comment = await db.addComment(activeSubfolder.id, user.id, userName, newComment.trim());
+      setComments(prev => [comment, ...prev]);
+      setNewComment('');
     } catch (error) {
-      console.error('Failed to save notes:', error);
-      showToast('Failed to save notes');
+      console.error('Failed to post comment:', error);
+      showToast('Failed to post comment');
     } finally {
-      setIsSavingNotes(false);
+      setIsPostingComment(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      await db.deleteComment(commentId);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+    } catch (error) {
+      console.error('Failed to delete comment:', error);
+      showToast('Failed to delete comment');
     }
   };
 
@@ -611,28 +636,77 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Notes Section */}
+                {/* Comments Section */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
-                      <MessageSquare size={18} />
-                      <span>Notes</span>
-                    </div>
-                    <button
-                      onClick={handleSaveNotes}
-                      disabled={isSavingNotes || subfolderNotes === (activeSubfolder?.notes || '')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-brand-red text-white hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                      <Save size={14} />
-                      {isSavingNotes ? 'Saving...' : 'Save'}
-                    </button>
+                  <div className="flex items-center gap-2 text-slate-700 font-semibold mb-4">
+                    <MessageSquare size={18} />
+                    <span>Comments</span>
+                    <span className="text-xs bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 font-medium ml-1">
+                      {comments.length}
+                    </span>
                   </div>
-                  <textarea
-                    value={subfolderNotes}
-                    onChange={(e) => setSubfolderNotes(e.target.value)}
-                    placeholder="Add notes for this subfolder..."
-                    className="w-full h-32 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-red focus:bg-white transition-all resize-none text-slate-700"
-                  />
+
+                  {/* New Comment Input */}
+                  <div className="flex gap-3 mb-4">
+                    <div className="w-8 h-8 bg-brand-red rounded-full flex items-center justify-center text-white flex-shrink-0">
+                      <User size={14} />
+                    </div>
+                    <div className="flex-1 flex gap-2">
+                      <input
+                        type="text"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handlePostComment()}
+                        placeholder="Add a comment..."
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand-red focus:bg-white transition-all text-sm"
+                      />
+                      <button
+                        onClick={handlePostComment}
+                        disabled={isPostingComment || !newComment.trim()}
+                        className="bg-brand-red hover:bg-brand-red-dark disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl transition-all flex items-center gap-2"
+                      >
+                        <Send size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Comments Feed */}
+                  <div className="space-y-4 max-h-64 overflow-y-auto custom-scrollbar">
+                    {isLoadingComments ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-red"></div>
+                      </div>
+                    ) : comments.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 text-sm">
+                        No comments yet. Be the first to add one!
+                      </div>
+                    ) : (
+                      comments.map(comment => (
+                        <div key={comment.id} className="flex gap-3 group">
+                          <div className="w-8 h-8 bg-brand-navy rounded-full flex items-center justify-center text-white flex-shrink-0 text-xs font-medium">
+                            {comment.userName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium text-slate-800 text-sm">{comment.userName}</span>
+                              <span className="text-xs text-slate-400">
+                                {new Date(comment.createdAt).toLocaleDateString()} {new Date(comment.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {comment.userId === user?.id && (
+                                <button
+                                  onClick={() => handleDeleteComment(comment.id)}
+                                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all ml-auto"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-slate-600 text-sm break-words">{comment.content}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
 
               </div>

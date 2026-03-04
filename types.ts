@@ -27,3 +27,12 @@ export interface Folder {
 }
 
 export type ViewState = 'grid' | 'folder' | 'subfolder';
+
+export interface Comment {
+  id: string;
+  subfolderId: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: number;
+}

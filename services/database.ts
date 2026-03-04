@@ -1,4 +1,4 @@
-import { Folder, Subfolder, Asset } from '../types';
+import { Folder, Subfolder, Asset, Comment } from '../types';
 import { supabase } from './supabase';
 
 export interface DbFolder {
@@ -412,6 +412,80 @@ export async function updateSubfolderNotes(subfolderId: string, notes: string): 
 
   if (error) {
     console.error('Error updating subfolder notes:', error);
+    throw error;
+  }
+}
+
+// === Comment Functions ===
+
+export interface DbComment {
+  id: string;
+  subfolder_id: string;
+  user_id: string;
+  user_name: string;
+  content: string;
+  created_at: string;
+}
+
+function toAppComment(dbComment: DbComment): Comment {
+  return {
+    id: dbComment.id,
+    subfolderId: dbComment.subfolder_id,
+    userId: dbComment.user_id,
+    userName: dbComment.user_name,
+    content: dbComment.content,
+    createdAt: new Date(dbComment.created_at).getTime(),
+  };
+}
+
+export async function getComments(subfolderId: string): Promise<Comment[]> {
+  const { data: comments, error } = await supabase
+    .from('comments')
+    .select('*')
+    .eq('subfolder_id', subfolderId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching comments:', error);
+    throw error;
+  }
+
+  return (comments || []).map(toAppComment);
+}
+
+export async function addComment(
+  subfolderId: string,
+  userId: string,
+  userName: string,
+  content: string
+): Promise<Comment> {
+  const { data: comment, error } = await supabase
+    .from('comments')
+    .insert({
+      subfolder_id: subfolderId,
+      user_id: userId,
+      user_name: userName,
+      content
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error adding comment:', error);
+    throw error;
+  }
+
+  return toAppComment(comment);
+}
+
+export async function deleteComment(commentId: string): Promise<void> {
+  const { error } = await supabase
+    .from('comments')
+    .delete()
+    .eq('id', commentId);
+
+  if (error) {
+    console.error('Error deleting comment:', error);
     throw error;
   }
 }
